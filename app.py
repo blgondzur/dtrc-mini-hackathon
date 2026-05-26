@@ -37,7 +37,7 @@ def init_db():
             location    TEXT    DEFAULT '',
             description TEXT    DEFAULT '',
             amenities   TEXT    DEFAULT '',
-            active      INTEGER DEFAULT 1 NOT NULL,
+            active      INTEGER DEFAULT 1,
             created_at  TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS bookings (
@@ -53,12 +53,16 @@ def init_db():
         );
     """)
     conn.commit()
-    # Migration: add 'active' column to existing DBs that predate this column
+    # Migration: add 'active' column to existing DBs that predate this column.
+    # Omit NOT NULL so this works on SQLite < 3.37 too.
     try:
-        conn.execute("ALTER TABLE rooms ADD COLUMN active INTEGER DEFAULT 1 NOT NULL")
+        conn.execute("ALTER TABLE rooms ADD COLUMN active INTEGER DEFAULT 1")
         conn.commit()
     except Exception:
         pass  # column already exists — safe to ignore
+    # Normalise any NULLs left by older migrations so active is always 0 or 1.
+    conn.execute("UPDATE rooms SET active = 1 WHERE active IS NULL")
+    conn.commit()
     conn.close()
 
 
@@ -108,7 +112,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rows = conn.execute("SELECT * FROM rooms ORDER BY name").fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM rooms WHERE active=1 ORDER BY name"
+                    "SELECT * FROM rooms WHERE coalesce(active,1) = 1 ORDER BY name"
                 ).fetchall()
             conn.close()
             self.send_json([dict(r) for r in rows])
