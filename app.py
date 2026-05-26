@@ -37,6 +37,7 @@ def init_db():
             location    TEXT    DEFAULT '',
             description TEXT    DEFAULT '',
             amenities   TEXT    DEFAULT '',
+            active      INTEGER DEFAULT 1 NOT NULL,
             created_at  TEXT    DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS bookings (
@@ -52,6 +53,12 @@ def init_db():
         );
     """)
     conn.commit()
+    # Migration: add 'active' column to existing DBs that predate this column
+    try:
+        conn.execute("ALTER TABLE rooms ADD COLUMN active INTEGER DEFAULT 1 NOT NULL")
+        conn.commit()
+    except Exception:
+        pass  # column already exists — safe to ignore
     conn.close()
 
 
@@ -93,8 +100,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.serve_html()
 
         elif path == "/api/rooms":
+            # ?all=1  → return active + inactive (admin manage view)
+            # default → only active rooms (dashboard + booking)
+            show_all = qs.get("all", [None])[0] == "1"
             conn = get_db()
-            rows = conn.execute("SELECT * FROM rooms ORDER BY name").fetchall()
+            if show_all:
+                rows = conn.execute("SELECT * FROM rooms ORDER BY name").fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM rooms WHERE active=1 ORDER BY name"
+                ).fetchall()
             conn.close()
             self.send_json([dict(r) for r in rows])
 
@@ -102,17 +117,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             conn = get_db()
             room_id = qs.get("room_id", [None])[0]
             date    = qs.get("date",    [None])[0]
+            # ?history=1 → include cancelled bookings (admin history tab)
+            history = qs.get("history", [None])[0] == "1"
+
             sql = """
                 SELECT b.*, r.name AS room_name
                 FROM bookings b JOIN rooms r ON b.room_id = r.id
-                WHERE b.status = 'confirmed'
+                WHERE 1=1
             """
+            if not history:
+                sql += " AND b.status = 'confirmed'"
             params = []
             if room_id:
                 sql += " AND b.room_id = ?"; params.append(room_id)
             if date:
                 sql += " AND b.date = ?";    params.append(date)
-            sql += " ORDER BY b.date, b.start_time"
+
+            sql += " ORDER BY b.date DESC, b.start_time" if history \
+                   else " ORDER BY b.date, b.start_time"
+
             rows = conn.execute(sql, params).fetchall()
             conn.close()
             self.send_json([dict(r) for r in rows])
@@ -181,15 +204,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_PATCH(self):
         path = urlparse(self.path).path
+
+        # Cancel a booking — no body needed
         m = re.match(r"^/api/bookings/(\d+)/cancel$", path)
         if m:
             conn = get_db()
             conn.execute("UPDATE bookings SET status='cancelled' WHERE id=?", (m.group(1),))
             conn.commit()
             conn.close()
-            self.send_json({"ok": True})
-        else:
-            self.send_json({"error": "not found"}, 404)
+            return self.send_json({"ok": True})
+
+        # Toggle room active / inactive — expects { "active": 0|1 }
+        m = re.match(r"^/api/rooms/(\d+)$", path)
+        if m:
+            data = self.read_json()
+            if "active" not in data:
+                return self.send_json({"error": "active field required"}, 400)
+            conn = get_db()
+            conn.execute(
+                "UPDATE rooms SET active=? WHERE id=?",
+                (1 if data["active"] else 0, m.group(1))
+            )
+            conn.commit()
+            row = conn.execute("SELECT * FROM rooms WHERE id=?", (m.group(1),)).fetchone()
+            conn.close()
+            return self.send_json(dict(row))
+
+        self.send_json({"error": "not found"}, 404)
 
     # ── DELETE ────────────────────────────────────────────────────────────────
 

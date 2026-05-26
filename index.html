@@ -10,7 +10,7 @@
     .tab-inactive { border-color: transparent; color: #6b7280; }
     .tab-inactive:hover { color: #374151; border-color: #d1d5db; }
 
-    /* Prevent iOS from zooming into focused inputs (requires font-size ≥ 16px) */
+    /* Prevent iOS zoom on focused inputs */
     input, select, textarea { font-size: 16px; }
 
     /* Hide scrollbar on tab strip while keeping it scrollable */
@@ -22,6 +22,12 @@
 
     input[type="date"]::-webkit-calendar-picker-indicator,
     input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+    .pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen text-gray-900 antialiased">
@@ -41,13 +47,9 @@
     <span class="text-xs text-gray-400 font-medium uppercase tracking-wide hidden sm:block">Role</span>
     <div class="flex bg-gray-100 rounded-lg p-1 gap-0.5">
       <button id="roleBtn-booker" onclick="setRole('booker')"
-        class="px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[64px]">
-        Booker
-      </button>
+        class="px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[64px]">Booker</button>
       <button id="roleBtn-admin" onclick="setRole('admin')"
-        class="px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[60px]">
-        Admin
-      </button>
+        class="px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[60px]">Admin</button>
     </div>
   </div>
 </header>
@@ -56,17 +58,13 @@
 <div class="bg-white border-b border-gray-200">
   <div class="tab-strip flex max-w-6xl mx-auto px-2 sm:px-6">
     <button id="tabBtn-dashboard" onclick="setTab('dashboard')"
-      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap">
-      Dashboard
-    </button>
+      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap">Dashboard</button>
     <button id="tabBtn-bookings" onclick="setTab('bookings')"
-      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap">
-      Bookings
-    </button>
+      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap">Bookings</button>
+    <button id="tabBtn-history" onclick="setTab('history')"
+      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap hidden">History</button>
     <button id="tabBtn-manage" onclick="setTab('manage')"
-      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap hidden">
-      Manage Rooms
-    </button>
+      class="flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap hidden">Manage Rooms</button>
   </div>
 </div>
 
@@ -75,25 +73,60 @@
 
   <!-- ═══════════════════════════ DASHBOARD ══════════════════════════════ -->
   <div id="view-dashboard">
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
-      <h2 class="text-xl font-semibold">Room Availability</h2>
-      <div class="flex items-center gap-2">
-        <label class="text-sm text-gray-500 flex-shrink-0">Date</label>
-        <input id="dashDate" type="date"
-          class="flex-1 sm:flex-none border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          onchange="renderDashboard()" />
+
+    <!-- Header row -->
+    <div class="flex flex-col gap-3 mb-5">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <h2 class="text-xl font-semibold">Room Availability</h2>
+          <!-- Live indicator (hidden until polling starts) -->
+          <div id="liveIndicator" style="display:none">
+            <div class="flex items-center gap-1 text-xs text-green-600 font-medium">
+              <span class="pulse-dot">●</span>
+              <span id="pollCountdownText">Live</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-sm text-gray-500 flex-shrink-0">Date</label>
+          <input id="dashDate" type="date"
+            class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onchange="renderDashboard()" />
+        </div>
+      </div>
+
+      <!-- Time-of-day filter (Bonus) -->
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <span class="text-gray-500 flex-shrink-0">Available:</span>
+        <input id="filterFrom" type="time"
+          class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-28"
+          onchange="applyTimeFilter()" />
+        <span class="text-gray-400">–</span>
+        <input id="filterTo" type="time"
+          class="border border-gray-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-28"
+          onchange="applyTimeFilter()" />
+        <button id="clearFilterBtn" onclick="clearTimeFilter()"
+          class="hidden text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition-colors">
+          ✕ Clear
+        </button>
+        <span id="filterBadge" class="hidden text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium"></span>
       </div>
     </div>
 
     <div id="roomGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
 
-    <div id="noRooms" class="hidden flex flex-col items-center py-20 text-center">
+    <div id="noRooms" class="hidden flex-col items-center py-20 text-center">
       <svg class="w-12 h-12 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
           d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5"/>
       </svg>
       <p class="text-gray-400 text-sm">No rooms yet.</p>
       <p class="text-gray-400 text-xs mt-1">Switch to Admin → Manage Rooms to add one.</p>
+    </div>
+
+    <div id="noMatchFilter" class="hidden flex-col items-center py-20 text-center">
+      <p class="text-gray-400 text-sm">No rooms available during that time window.</p>
+      <button onclick="clearTimeFilter()" class="mt-2 text-xs text-blue-600 hover:underline">Clear filter</button>
     </div>
   </div>
 
@@ -118,20 +151,36 @@
         </button>
       </div>
     </div>
-
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div id="bookingsList"></div>
     </div>
   </div>
 
-  <!-- ═══════════════════════════ MANAGE ROOMS ═══════════════════════════ -->
+  <!-- ═══════════════════════════ HISTORY [Admin] ════════════════════════ -->
+  <div id="view-history" class="hidden">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+      <h2 class="text-xl font-semibold">Booking History</h2>
+      <button onclick="loadAndRenderHistory()"
+        class="flex items-center gap-1.5 text-sm text-blue-600 font-medium px-3 py-2 rounded-lg hover:bg-blue-50 transition-colors self-start">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        Refresh
+      </button>
+    </div>
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════ MANAGE ROOMS [Admin] ══════════════════ -->
   <div id="view-manage" class="hidden">
 
     <!-- Add Room Card -->
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-6 mb-6">
       <h2 class="text-lg font-semibold mb-4">Add a Room</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">
             Room Name <span class="text-red-500">*</span>
@@ -139,32 +188,27 @@
           <input id="f-name" type="text" placeholder="e.g. Conference Room A"
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Capacity</label>
           <input id="f-capacity" type="number" placeholder="e.g. 10" min="1"
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Location / Floor</label>
           <input id="f-location" type="text" placeholder="e.g. Floor 2, East Wing"
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Amenities</label>
           <input id="f-amenities" type="text" placeholder="e.g. Projector, Whiteboard, TV"
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-
         <div class="sm:col-span-2">
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
           <textarea id="f-description" rows="2" placeholder="Optional notes about this room..."
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
         </div>
       </div>
-
       <div class="mt-4 flex items-center gap-3 flex-wrap">
         <button onclick="addRoom()"
           class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
@@ -201,14 +245,13 @@
     </div>
 
     <div class="px-5 sm:px-6 pt-2 sm:pt-6 pb-6">
-      <!-- Header -->
       <div class="flex items-start justify-between mb-5">
         <div>
           <h3 class="text-lg font-semibold" id="modalRoomName">Book Room</h3>
           <p class="text-sm text-gray-400 mt-0.5" id="modalRoomMeta"></p>
         </div>
         <button onclick="closeModal()"
-          class="text-gray-300 hover:text-gray-500 active:text-gray-600 transition-colors ml-3 flex-shrink-0 p-1 -mt-1 -mr-1 rounded-lg">
+          class="text-gray-300 hover:text-gray-500 transition-colors ml-3 flex-shrink-0 p-1 -mt-1 -mr-1 rounded-lg">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
           </svg>
@@ -230,7 +273,6 @@
           <input id="m-name" type="text" placeholder="Full name" autocomplete="name"
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
-
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">
             Date <span class="text-red-500">*</span>
@@ -239,7 +281,6 @@
             class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             onchange="updateModalExisting()" />
         </div>
-
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">
@@ -256,7 +297,6 @@
               class="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
-
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Purpose</label>
           <input id="m-purpose" type="text" placeholder="e.g. Team meeting, Interview…"
@@ -288,11 +328,16 @@
 <!-- ── SCRIPT ─────────────────────────────────────────────────────────────── -->
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
-let role      = 'booker';
-let tab       = 'dashboard';
-let rooms     = [];
-let bookings  = [];
-let modalRoom = null;
+let role             = 'booker';
+let tab              = 'dashboard';
+let rooms            = [];   // active rooms only (dashboard + booking modal)
+let adminRooms       = [];   // all rooms incl. inactive (manage tab)
+let bookings         = [];   // confirmed bookings
+let historyBookings  = [];   // all bookings incl. cancelled (admin history)
+let modalRoom        = null;
+let pollTimer        = null;
+let countdownTimer   = null;
+let pollCountdown    = 10;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function todayStr() {
@@ -302,6 +347,25 @@ function todayStr() {
 function fmtDate(str) {
   const d = new Date(str + 'T00:00:00');
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function fmtTime(t) {
+  // "14:30" → "2:30 PM"
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12  = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+function timeToMins(t) {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function nowMins() {
+  const n = new Date();
+  return n.getHours() * 60 + n.getMinutes();
 }
 
 function esc(s) {
@@ -321,19 +385,19 @@ function showToast(msg, duration = 3000) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.remove('hidden');
-  setTimeout(() => t.classList.add('hidden'), duration);
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.add('hidden'), duration);
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-async function init() {
-  document.getElementById('dashDate').value = todayStr();
-  await Promise.all([loadRooms(), loadBookings()]);
-  setRole('booker');
-}
-
+// ── Data Loading ──────────────────────────────────────────────────────────────
 async function loadRooms() {
   const r = await apiFetch('GET', '/api/rooms');
   if (r.ok) rooms = r.data;
+}
+
+async function loadAdminRooms() {
+  const r = await apiFetch('GET', '/api/rooms?all=1');
+  if (r.ok) adminRooms = r.data;
 }
 
 async function loadBookings() {
@@ -341,92 +405,242 @@ async function loadBookings() {
   if (r.ok) bookings = r.data;
 }
 
+async function loadHistory() {
+  const r = await apiFetch('GET', '/api/bookings?history=1');
+  if (r.ok) historyBookings = r.data;
+}
+
 async function refreshBookings() {
   await loadBookings();
   renderBookingsTab();
 }
 
+async function loadAndRenderHistory() {
+  await loadHistory();
+  renderHistoryTab();
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function startPolling() {
+  stopPolling();
+  pollCountdown = 10;
+  document.getElementById('liveIndicator').style.display = 'flex';
+  updatePollDisplay();
+
+  // Refresh bookings every 10 seconds
+  pollTimer = setInterval(async () => {
+    pollCountdown = 10;
+    await loadBookings();
+    if (tab === 'dashboard') renderDashboard();
+    else if (tab === 'bookings') renderBookingsTab();
+    updatePollDisplay();
+  }, 10000);
+
+  // Tick countdown every second
+  countdownTimer = setInterval(() => {
+    pollCountdown = Math.max(0, pollCountdown - 1);
+    updatePollDisplay();
+  }, 1000);
+}
+
+function stopPolling() {
+  clearInterval(pollTimer);
+  clearInterval(countdownTimer);
+  pollTimer = countdownTimer = null;
+}
+
+function updatePollDisplay() {
+  const el = document.getElementById('pollCountdownText');
+  if (el) el.textContent = pollCountdown > 0 ? `Refreshes in ${pollCountdown}s` : 'Refreshing…';
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  document.getElementById('dashDate').value = todayStr();
+  await Promise.all([loadRooms(), loadBookings()]);
+  setRole('booker');
+  startPolling();
+}
+
 // ── Role ──────────────────────────────────────────────────────────────────────
 function setRole(r) {
   role = r;
-
-  const activeClass   = 'bg-white shadow text-blue-600 font-semibold';
-  const inactiveClass = 'text-gray-500 hover:text-gray-700';
-
+  const active   = 'bg-white shadow text-blue-600 font-semibold';
+  const inactive = 'text-gray-500 hover:text-gray-700';
   document.getElementById('roleBtn-booker').className =
     'px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[64px] ' +
-    (role === 'booker' ? activeClass : inactiveClass);
+    (role === 'booker' ? active : inactive);
   document.getElementById('roleBtn-admin').className =
     'px-3 sm:px-4 py-1.5 rounded-md text-sm font-medium transition-all min-w-[60px] ' +
-    (role === 'admin' ? activeClass : inactiveClass);
+    (role === 'admin' ? active : inactive);
 
-  document.getElementById('tabBtn-manage').classList.toggle('hidden', role !== 'admin');
+  // Show/hide admin-only tabs
+  ['tabBtn-history', 'tabBtn-manage'].forEach(id =>
+    document.getElementById(id).classList.toggle('hidden', role !== 'admin')
+  );
 
-  if (role === 'booker' && tab === 'manage') {
+  // Kick back to dashboard if current tab is admin-only
+  if (role === 'booker' && (tab === 'manage' || tab === 'history')) {
     setTab('dashboard');
   } else {
-    setTab(tab === 'manage' && role !== 'admin' ? 'dashboard' : tab);
+    setTab(tab);
   }
 }
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 function setTab(t) {
   tab = t;
-  ['dashboard', 'bookings', 'manage'].forEach(id => {
+  ['dashboard', 'bookings', 'history', 'manage'].forEach(id => {
     const btn  = document.getElementById(`tabBtn-${id}`);
     const view = document.getElementById(`view-${id}`);
-    const active = id === t;
+    const isActive = id === t;
     if (btn) btn.className =
       'flex-shrink-0 py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap ' +
-      (active ? 'tab-active' : 'tab-inactive');
-    if (view) view.classList.toggle('hidden', !active);
+      (isActive ? 'tab-active' : 'tab-inactive');
+    if (view) view.classList.toggle('hidden', !isActive);
   });
 
   if (t === 'dashboard') renderDashboard();
   if (t === 'bookings')  renderBookingsTab();
-  if (t === 'manage')    renderManageTab();
+  if (t === 'history')   loadAndRenderHistory();
+  if (t === 'manage')    loadAdminRooms().then(renderManageTab);
+}
+
+// ── Live Status ───────────────────────────────────────────────────────────────
+function getLiveStatus(room, date) {
+  const dayBkgs = bookings.filter(b => b.room_id === room.id && b.date === date);
+
+  if (date === todayStr()) {
+    const nm = nowMins();
+
+    // Currently occupied?
+    const occupied = dayBkgs.find(b =>
+      timeToMins(b.start_time) <= nm && nm < timeToMins(b.end_time)
+    );
+    if (occupied) {
+      return {
+        label:     'Occupied',
+        detail:    `Until ${fmtTime(occupied.end_time)}`,
+        badgeCls:  'bg-red-50 text-red-600 border border-red-100',
+        dot:       '🔴'
+      };
+    }
+
+    // Booking starting within 30 min?
+    const soon = dayBkgs.find(b => {
+      const sm = timeToMins(b.start_time);
+      return sm > nm && sm <= nm + 30;
+    });
+    if (soon) {
+      return {
+        label:    'Coming Up Soon',
+        detail:   `Starts ${fmtTime(soon.start_time)}`,
+        badgeCls: 'bg-amber-50 text-amber-600 border border-amber-100',
+        dot:      '🟡'
+      };
+    }
+
+    return { label: 'Free', detail: null, badgeCls: 'bg-green-50 text-green-700 border border-green-100', dot: '🟢' };
+
+  } else {
+    // Non-today: static free / has bookings
+    if (dayBkgs.length === 0)
+      return { label: 'Free', detail: null, badgeCls: 'bg-green-50 text-green-700 border border-green-100', dot: '●' };
+    return {
+      label:    `${dayBkgs.length} booking${dayBkgs.length > 1 ? 's' : ''}`,
+      detail:   null,
+      badgeCls: 'bg-amber-50 text-amber-700 border border-amber-100',
+      dot:      '●'
+    };
+  }
+}
+
+// ── Time Filter ───────────────────────────────────────────────────────────────
+function applyTimeFilter() {
+  const from = document.getElementById('filterFrom').value;
+  const to   = document.getElementById('filterTo').value;
+  const badge    = document.getElementById('filterBadge');
+  const clearBtn = document.getElementById('clearFilterBtn');
+
+  if (from && to) {
+    badge.textContent = `Available ${fmtTime(from)} – ${fmtTime(to)}`;
+    badge.classList.remove('hidden');
+    clearBtn.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+    clearBtn.classList.add('hidden');
+  }
+  renderDashboard();
+}
+
+function clearTimeFilter() {
+  document.getElementById('filterFrom').value = '';
+  document.getElementById('filterTo').value   = '';
+  document.getElementById('filterBadge').classList.add('hidden');
+  document.getElementById('clearFilterBtn').classList.add('hidden');
+  renderDashboard();
+}
+
+function roomPassesTimeFilter(room, date) {
+  const from = document.getElementById('filterFrom').value;
+  const to   = document.getElementById('filterTo').value;
+  if (!from || !to) return true;  // no filter active
+
+  const fromMins = timeToMins(from);
+  const toMins   = timeToMins(to);
+  const dayBkgs  = bookings.filter(b => b.room_id === room.id && b.date === date);
+
+  // Room is unavailable if ANY booking overlaps the filter window
+  return !dayBkgs.find(b =>
+    timeToMins(b.start_time) < toMins && timeToMins(b.end_time) > fromMins
+  );
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 function renderDashboard() {
-  const date    = document.getElementById('dashDate').value;
-  const dayBkgs = bookings.filter(b => b.date === date);
-  const grid    = document.getElementById('roomGrid');
-  const noRooms = document.getElementById('noRooms');
+  const date     = document.getElementById('dashDate').value;
+  const grid     = document.getElementById('roomGrid');
+  const noRooms  = document.getElementById('noRooms');
+  const noFilter = document.getElementById('noMatchFilter');
 
   if (rooms.length === 0) {
     grid.innerHTML = '';
-    noRooms.classList.remove('hidden');
+    noRooms.style.display   = 'flex';
+    noFilter.style.display  = 'none';
     return;
   }
-  noRooms.classList.add('hidden');
+  noRooms.style.display = 'none';
 
-  grid.innerHTML = rooms.map(room => {
-    const rb = dayBkgs
-      .filter(b => b.room_id === room.id)
+  const visible = rooms.filter(r => roomPassesTimeFilter(r, date));
+  if (visible.length === 0) {
+    grid.innerHTML = '';
+    noFilter.style.display = 'flex';
+    return;
+  }
+  noFilter.style.display = 'none';
+
+  grid.innerHTML = visible.map(room => {
+    const status  = getLiveStatus(room, date);
+    const dayBkgs = bookings
+      .filter(b => b.room_id === room.id && b.date === date)
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
-    const available = rb.length === 0;
-
-    const statusBadge = available
-      ? `<span class="bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0">● Free</span>`
-      : `<span class="bg-amber-50 text-amber-700 text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0">${rb.length} booked</span>`;
 
     const amenityTags = (room.amenities || '')
       .split(',').map(a => a.trim()).filter(Boolean)
       .map(a => `<span class="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">${esc(a)}</span>`)
       .join('');
 
-    const bookingRows = rb.map(b => `
+    const bookingRows = dayBkgs.map(b => `
       <div class="flex items-baseline gap-2 py-1.5 border-b border-gray-100 last:border-0 text-xs">
-        <span class="font-mono text-gray-400 flex-shrink-0">${esc(b.start_time)}–${esc(b.end_time)}</span>
+        <span class="font-mono text-gray-400 flex-shrink-0">${fmtTime(b.start_time)}–${fmtTime(b.end_time)}</span>
         <span class="font-medium text-gray-700 truncate">${esc(b.booked_by)}</span>
         ${b.purpose ? `<span class="text-gray-400 truncate hidden sm:inline">· ${esc(b.purpose)}</span>` : ''}
       </div>`).join('');
 
-    const availSection = available
+    const scheduleSection = dayBkgs.length === 0
       ? `<p class="text-xs text-green-600 font-medium mt-2">Free all day on ${fmtDate(date)}</p>`
       : `<div class="mt-3 bg-gray-50 rounded-lg px-3 pt-2 pb-1">
-           <p class="text-xs font-medium text-gray-400 mb-0.5">Bookings on ${fmtDate(date)}</p>
+           <p class="text-xs font-medium text-gray-400 mb-0.5">Schedule — ${fmtDate(date)}</p>
            ${bookingRows}
          </div>`;
 
@@ -444,7 +658,12 @@ function renderDashboard() {
         <div class="p-4 sm:p-5 flex-1">
           <div class="flex items-start justify-between gap-2 mb-1">
             <h3 class="font-semibold text-gray-900 leading-tight">${esc(room.name)}</h3>
-            ${statusBadge}
+            <div class="flex-shrink-0 text-right">
+              <span class="${status.badgeCls} text-xs px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+                ${status.dot} ${esc(status.label)}
+              </span>
+              ${status.detail ? `<p class="text-xs text-gray-400 mt-0.5 text-right">${esc(status.detail)}</p>` : ''}
+            </div>
           </div>
           <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-gray-400 mb-2">
             ${room.capacity ? `<span>👥 ${esc(String(room.capacity))}</span>` : ''}
@@ -452,7 +671,7 @@ function renderDashboard() {
           </div>
           ${room.description ? `<p class="text-xs text-gray-500 mb-2 leading-relaxed">${esc(room.description)}</p>` : ''}
           ${amenityTags ? `<div class="flex flex-wrap gap-1 mb-1">${amenityTags}</div>` : ''}
-          ${availSection}
+          ${scheduleSection}
         </div>
         ${bookBtn}
       </div>`;
@@ -463,13 +682,11 @@ function renderDashboard() {
 function renderBookingsTab() {
   const filter = document.getElementById('bookingFilter').value;
   const today  = todayStr();
-
-  let list = [...bookings];
+  let list     = [...bookings];
   if (filter === 'upcoming') list = list.filter(b => b.date >= today);
   list.sort((a, b) => (a.date + a.start_time).localeCompare(b.date + b.start_time));
 
   const el = document.getElementById('bookingsList');
-
   if (list.length === 0) {
     el.innerHTML = `
       <div class="flex flex-col items-center py-14 text-center">
@@ -488,22 +705,20 @@ function renderBookingsTab() {
   el.innerHTML = Object.entries(byDate).map(([date, bkgs]) => {
     const isToday  = date === today;
     const isFuture = date > today;
-
-    // Mobile-first rows: stacked layout, cancel always visible
     const rows = bkgs.map(b => `
       <div class="flex items-start px-4 sm:px-6 py-3.5 border-b border-gray-50 last:border-0">
         <div class="flex-1 min-w-0">
           <div class="flex items-start justify-between gap-3">
             <p class="text-sm font-medium text-gray-900 leading-snug">${esc(b.room_name)}</p>
             <button onclick="cancelBooking(${b.id})"
-              class="flex-shrink-0 text-xs font-medium text-red-400 hover:text-red-600 active:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 active:bg-red-100 transition-colors -mt-0.5">
+              class="flex-shrink-0 text-xs font-medium text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors -mt-0.5">
               Cancel
             </button>
           </div>
           <p class="text-xs text-gray-500 mt-0.5 truncate">
             ${esc(b.booked_by)}${b.purpose ? ' · ' + esc(b.purpose) : ''}
           </p>
-          <p class="text-xs font-mono text-gray-400 mt-0.5">${esc(b.start_time)} – ${esc(b.end_time)}</p>
+          <p class="text-xs font-mono text-gray-400 mt-0.5">${fmtTime(b.start_time)} – ${fmtTime(b.end_time)}</p>
         </div>
       </div>`).join('');
 
@@ -532,38 +747,124 @@ async function cancelBooking(id) {
   }
 }
 
-// ── Manage Rooms ──────────────────────────────────────────────────────────────
+// ── History Tab [Admin] ───────────────────────────────────────────────────────
+function renderHistoryTab() {
+  const el = document.getElementById('historyList');
+  if (historyBookings.length === 0) {
+    el.innerHTML = '<p class="text-sm text-gray-400 text-center py-10">No booking history yet.</p>';
+    return;
+  }
+
+  const today  = todayStr();
+  const byDate = {};
+  historyBookings.forEach(b => {
+    if (!byDate[b.date]) byDate[b.date] = [];
+    byDate[b.date].push(b);
+  });
+
+  el.innerHTML = Object.entries(byDate).map(([date, bkgs]) => {
+    const isToday = date === today;
+    const confirmedCount  = bkgs.filter(b => b.status === 'confirmed').length;
+    const cancelledCount  = bkgs.filter(b => b.status === 'cancelled').length;
+
+    const rows = bkgs.map(b => {
+      const cancelled = b.status === 'cancelled';
+      return `
+        <div class="flex items-start px-4 sm:px-6 py-3.5 border-b border-gray-50 last:border-0
+                    ${cancelled ? 'opacity-50' : ''}">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-start justify-between gap-3">
+              <p class="text-sm font-medium ${cancelled ? 'line-through text-gray-400' : 'text-gray-900'} leading-snug">
+                ${esc(b.room_name)}
+              </p>
+              ${cancelled
+                ? '<span class="flex-shrink-0 text-xs bg-gray-100 text-gray-400 px-2 py-0.5 rounded font-medium">Cancelled</span>'
+                : '<span class="flex-shrink-0 text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded font-medium">Confirmed</span>'}
+            </div>
+            <p class="text-xs text-gray-500 mt-0.5 truncate">
+              ${esc(b.booked_by)}${b.purpose ? ' · ' + esc(b.purpose) : ''}
+            </p>
+            <p class="text-xs font-mono text-gray-400 mt-0.5">
+              ${fmtTime(b.start_time)} – ${fmtTime(b.end_time)}
+            </p>
+          </div>
+        </div>`;
+    }).join('');
+
+    const summary = [
+      confirmedCount  ? `${confirmedCount} confirmed`  : '',
+      cancelledCount  ? `${cancelledCount} cancelled`  : ''
+    ].filter(Boolean).join(', ');
+
+    return `
+      <div class="border-b border-gray-100 last:border-0">
+        <div class="px-4 sm:px-6 py-2 bg-gray-50 flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold text-gray-600">${fmtDate(date)}</span>
+            ${isToday ? '<span class="text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-medium">Today</span>' : ''}
+          </div>
+          <span class="text-xs text-gray-400">${summary}</span>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+}
+
+// ── Manage Rooms Tab [Admin] ──────────────────────────────────────────────────
 function renderManageTab() {
+  const activeCount   = adminRooms.filter(r => r.active).length;
+  const inactiveCount = adminRooms.filter(r => !r.active).length;
   document.getElementById('roomCount').textContent =
-    `${rooms.length} room${rooms.length !== 1 ? 's' : ''}`;
+    `${activeCount} active${inactiveCount ? `, ${inactiveCount} inactive` : ''}`;
 
   const el = document.getElementById('adminRoomList');
-  if (rooms.length === 0) {
+  if (adminRooms.length === 0) {
     el.innerHTML = '<p class="text-sm text-gray-400 text-center py-10">No rooms added yet.</p>';
     return;
   }
 
-  // Mobile-first: delete button always visible, stacked layout
-  el.innerHTML = rooms.map(room => `
-    <div class="flex items-start px-4 sm:px-6 py-4 border-b border-gray-50 last:border-0">
-      <div class="flex-1 min-w-0">
-        <div class="flex items-start justify-between gap-3">
-          <p class="font-medium text-gray-900 leading-snug">${esc(room.name)}</p>
-          <button onclick="deleteRoom(${room.id}, ${JSON.stringify(room.name)})"
-            class="flex-shrink-0 text-xs font-medium text-red-400 hover:text-red-600 active:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50 active:bg-red-100 transition-colors -mt-0.5">
-            Delete
-          </button>
+  el.innerHTML = adminRooms.map(room => {
+    const isInactive = !room.active;
+    return `
+      <div class="flex items-start px-4 sm:px-6 py-4 border-b border-gray-50 last:border-0
+                  ${isInactive ? 'opacity-50' : ''}">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <p class="font-medium text-gray-900 leading-snug">${esc(room.name)}</p>
+                ${isInactive
+                  ? '<span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded font-medium">Inactive</span>'
+                  : ''}
+              </div>
+              <p class="text-xs text-gray-400 mt-0.5 truncate">
+                ${[
+                  room.capacity ? `${room.capacity} people` : null,
+                  room.location || null,
+                  room.amenities || null
+                ].filter(Boolean).join(' · ') || 'No details'}
+              </p>
+              ${room.description
+                ? `<p class="text-xs text-gray-500 mt-0.5 line-clamp-2">${esc(room.description)}</p>`
+                : ''}
+            </div>
+            <div class="flex gap-1 flex-shrink-0 items-center">
+              <button onclick="toggleRoomActive(${room.id}, ${isInactive})"
+                class="text-xs font-medium px-2 py-1 rounded-lg transition-colors
+                  ${isInactive
+                    ? 'text-green-600 hover:text-green-700 hover:bg-green-50'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'}">
+                ${isInactive ? 'Activate' : 'Deactivate'}
+              </button>
+              <button onclick="deleteRoom(${room.id}, ${JSON.stringify(room.name)})"
+                class="text-xs font-medium text-red-400 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
-        <p class="text-xs text-gray-400 mt-0.5 truncate">
-          ${[
-            room.capacity ? `${room.capacity} people` : null,
-            room.location || null,
-            room.amenities || null
-          ].filter(Boolean).join(' · ') || 'No details'}
-        </p>
-        ${room.description ? `<p class="text-xs text-gray-500 mt-0.5 line-clamp-2">${esc(room.description)}</p>` : ''}
-      </div>
-    </div>`).join('');
+      </div>`;
+  }).join('');
 }
 
 async function addRoom() {
@@ -586,7 +887,9 @@ async function addRoom() {
   });
 
   if (r.ok) {
-    rooms.push(r.data);
+    adminRooms.push(r.data);
+    rooms.push(r.data); // new rooms are active by default
+    rooms.sort((a, b) => a.name.localeCompare(b.name));
     ['f-name','f-capacity','f-location','f-description','f-amenities']
       .forEach(id => document.getElementById(id).value = '');
     showFieldMsg(msg, `✓ "${r.data.name}" added.`, 'green');
@@ -596,13 +899,38 @@ async function addRoom() {
   }
 }
 
+async function toggleRoomActive(id, makeActive) {
+  const r = await apiFetch('PATCH', `/api/rooms/${id}`, { active: makeActive ? 1 : 0 });
+  if (r.ok) {
+    // Update adminRooms in place
+    const idx = adminRooms.findIndex(rm => rm.id === id);
+    if (idx >= 0) adminRooms[idx] = r.data;
+
+    // Sync active rooms list
+    if (makeActive) {
+      if (!rooms.find(rm => rm.id === id)) rooms.push(r.data);
+      rooms.sort((a, b) => a.name.localeCompare(b.name));
+    } else {
+      rooms = rooms.filter(rm => rm.id !== id);
+    }
+
+    renderManageTab();
+    if (tab === 'dashboard') renderDashboard();
+    showToast(makeActive ? `"${r.data.name}" is now active.` : `"${r.data.name}" deactivated.`);
+  } else {
+    alert('Could not update room status.');
+  }
+}
+
 async function deleteRoom(id, name) {
   if (!confirm(`Delete "${name}"?\n\nThis will also remove all its bookings.`)) return;
   const r = await apiFetch('DELETE', `/api/rooms/${id}`);
   if (r.ok) {
-    rooms    = rooms.filter(rm => rm.id !== id);
-    bookings = bookings.filter(b => b.room_id !== id);
+    adminRooms = adminRooms.filter(rm => rm.id !== id);
+    rooms      = rooms.filter(rm => rm.id !== id);
+    bookings   = bookings.filter(b => b.room_id !== id);
     renderManageTab();
+    if (tab === 'dashboard') renderDashboard();
     showToast(`"${name}" deleted.`);
   } else {
     alert('Could not delete room.');
@@ -635,8 +963,6 @@ function openModal(room) {
 
   updateModalExisting();
   document.getElementById('modal').classList.remove('hidden');
-
-  // Small delay so focus doesn't fight the slide-up animation on mobile
   setTimeout(() => document.getElementById('m-name').focus(), 100);
 }
 
@@ -655,11 +981,10 @@ function updateModalExisting() {
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   if (existing.length === 0) { wrap.classList.add('hidden'); return; }
-
   wrap.classList.remove('hidden');
   listEl.innerHTML = existing.map(b => `
     <div class="flex items-center gap-2 text-xs py-0.5">
-      <span class="font-mono text-amber-700 font-medium flex-shrink-0">${esc(b.start_time)}–${esc(b.end_time)}</span>
+      <span class="font-mono text-amber-700 font-medium flex-shrink-0">${fmtTime(b.start_time)}–${fmtTime(b.end_time)}</span>
       <span class="text-gray-600 truncate">${esc(b.booked_by)}${b.purpose ? ' · ' + esc(b.purpose) : ''}</span>
     </div>`).join('');
 }
@@ -684,7 +1009,8 @@ async function submitBooking() {
   btn.textContent = 'Booking…';
 
   const r = await apiFetch('POST', '/api/bookings', {
-    room_id: room.id, booked_by: name, date, start_time: start, end_time: end, purpose
+    room_id: room.id, booked_by: name, date,
+    start_time: start, end_time: end, purpose
   });
 
   btn.disabled = false;
@@ -695,7 +1021,7 @@ async function submitBooking() {
     bookings.push(r.data);
     closeModal();
     renderDashboard();
-    showToast(`✓ Booked ${room.name} · ${start}–${end}`);
+    showToast(`✓ Booked ${room.name} · ${fmtTime(start)}–${fmtTime(end)}`);
   } else {
     showModalErr(r.data.error || 'Could not create booking.');
   }
